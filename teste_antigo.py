@@ -250,7 +250,7 @@ class TrelloCashFlowAnalyzer:
                 y=df_daily["saldo_acumulado"],
                 name="Saldo Acumulado",
                 mode="lines+markers",
-                line=dict(color="#DC2626", width=3, shape="linear"),
+                line=dict(color="#DC2626", width=3, shape="spline"),
                 marker=dict(size=10, color="#DC2626", line=dict(color="white", width=2)),
             ),
             secondary_y=True,
