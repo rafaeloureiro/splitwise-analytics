@@ -149,3 +149,74 @@ class TrelloCashFlowAnalyzer:
             'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua',
             'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sáb', 'Sunday': 'Dom'
         })
+        return result
+
+    def generate_interactive_chart(self, df_daily: pd.DataFrame, monthly_expenses: float, today: datetime):
+        fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+        x_labels = [f"{row['data_formatada']}<br><span style='font-size:11px; color:#8B95A5'>{row['dia_semana']}</span>" for _, row in df_daily.iterrows()]
+
+        fig.add_trace(
+            go.Bar(
+                x=x_labels, y=df_daily['total_saidas'], name='Saídas do Dia',
+                marker=dict(color=df_daily['total_saidas'], colorscale=[[0, '#E8F4F8'], [0.5, '#4FB3D4'], [1, '#2A7A9B']]),
+                text=df_daily['total_saidas'].apply(lambda x: f"<b>R$ {x:,.2f}</b>".replace(',', 'X').replace('.', ',').replace('X', '.') if x > 0 else ''),
+                textposition='outside', width=0.65
+            ),
+            secondary_y=False
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=x_labels, y=df_daily['saldo_acumulado'], name='Saldo Acumulado', mode='lines+markers',
+                line=dict(color='#DC2626', width=3, shape='spline'),
+                marker=dict(size=10, color='#DC2626', line=dict(color='white', width=2))
+            ),
+            secondary_y=True
+        )
+
+        monthly_fmt = f"{monthly_expenses:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+        fig.update_layout(
+            title=f"Gastos do Mês Atual: R$ {monthly_fmt}",
+            xaxis=dict(showgrid=False),
+            yaxis=dict(title='Saídas Diárias', tickprefix='R$ '),
+            yaxis2=dict(title='Saldo Acumulado', tickprefix='R$ '),
+            height=600, plot_bgcolor='#FAFBFC', paper_bgcolor='#FFFFFF'
+        )
+        return fig
+
+# --- EXECUÇÃO DO STREAMLIT ---
+st.set_page_config(page_title="Fluxo de Caixa Trello - Nov/25", layout="wide")
+st.title("📊 Painel de Teste: Versão Novembro/2025")
+
+BOARD_URL = "https://trello.com/b/WgSarYPK/contas-a-pagar-25"
+analyzer = TrelloCashFlowAnalyzer()
+
+if analyzer.load_credentials():
+    with st.spinner("Conectando ao Trello e calculando dados..."):
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = today + timedelta(days=6)
+        
+        lists = analyzer.get_board_lists(BOARD_URL)
+        if lists:
+            first_day_of_month = today.replace(day=1)
+            list_ids = analyzer.identify_month_lists(lists, first_day_of_month, end_date)
+            cards = analyzer.get_cards_from_lists(list_ids)
+            
+            if cards:
+                df_all_cards = analyzer.parse_all_cards(cards)
+                monthly_expenses = analyzer.calculate_monthly_expenses(df_all_cards, today)
+                df_cards = analyzer.filter_cards_by_date_range(df_all_cards, today, end_date)
+                df_daily = analyzer.calculate_daily_totals(df_cards, today, end_date)
+                
+                # Renderiza o gráfico direto na página web do Streamlit!
+                fig = analyzer.generate_interactive_chart(df_daily, monthly_expenses, today)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Mostra a tabelinha de detalhes logo abaixo
+                st.subheader("📋 Detalhamento dos Cards vindo do Trello")
+                if not df_cards.empty:
+                    st.dataframe(df_cards[['data', 'valor', 'nome']])
+                else:
+                    st.info("Nenhum card agendado para os próximos 7 dias.")
+            else:
+                st.warning("Nenhum card encontrado nas listas do Trello.")
